@@ -3,7 +3,7 @@ from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
 
 from .prompts import ORCHESTRATOR_PROMPT
-from .tools import generate_test
+from .tools import research_book, design_blueprint, generate_questions
 from db.session_service import SQLiteSessionService
 
 APP_NAME = os.getenv("APP_NAME", "ai-practice-mvp")
@@ -21,7 +21,7 @@ def build_runner(db_path: str) -> Runner:
         name="orchestrator",
         model="gemini-2.5-flash",
         instruction=ORCHESTRATOR_PROMPT,
-        tools=[generate_test],
+        tools=[research_book, design_blueprint, generate_questions],
     )
 
     session_service = SQLiteSessionService(db_path=db_path)

@@ -100,35 +100,52 @@ async def chat(req: ChatRequest):
                     continue
 
                 for part in event.content.parts or []:
-                    # ── Detect test artifact from generate_test tool response ──
                     if hasattr(part, "function_response") and part.function_response:
                         fn = part.function_response
-                        if fn.name == "generate_test":
-                            result_str = fn.response.get("result", "") if isinstance(fn.response, dict) else ""
+                        result_str = fn.response.get("result", "") if isinstance(fn.response, dict) else ""
+
+                        # ── research_book → emit research event ──
+                        if fn.name == "research_book":
+                            try:
+                                research_data = json.loads(result_str)
+                            except (json.JSONDecodeError, ValueError):
+                                continue
+                            # Strip raw_research — it's verbose and only needed server-side
+                            frontend_research = {k: v for k, v in research_data.items() if k != "raw_research"}
+                            yield f"data: {json.dumps({'type': 'research', 'data': frontend_research})}\n\n"
+                            try:
+                                session = await svc.get_session(app_name=APP_NAME, user_id=req.user_id, session_id=req.session_id)
+                                if session:
+                                    await svc.persist_state(app_name=APP_NAME, user_id=req.user_id, session_id=req.session_id, state=dict(session.state))
+                            except Exception:
+                                pass
+
+                        # ── design_blueprint → emit blueprint event ──
+                        elif fn.name == "design_blueprint":
+                            try:
+                                blueprint_data = json.loads(result_str)
+                            except (json.JSONDecodeError, ValueError):
+                                continue
+                            yield f"data: {json.dumps({'type': 'blueprint', 'data': blueprint_data})}\n\n"
+                            try:
+                                session = await svc.get_session(app_name=APP_NAME, user_id=req.user_id, session_id=req.session_id)
+                                if session:
+                                    await svc.persist_state(app_name=APP_NAME, user_id=req.user_id, session_id=req.session_id, state=dict(session.state))
+                            except Exception:
+                                pass
+
+                        # ── generate_questions → emit artifact event (answer key stripped) ──
+                        elif fn.name == "generate_questions":
                             try:
                                 full_test = json.loads(result_str)
                             except (json.JSONDecodeError, ValueError):
-                                continue  # malformed JSON — skip artifact
-
-                            # Emit artifact immediately — answer key stripped
+                                continue
                             frontend_test = _strip_answers(full_test)
                             yield f"data: {json.dumps({'type': 'artifact', 'test': frontend_test})}\n\n"
-
-                            # Persist state to SQLite separately so a failure here
-                            # never blocks the stream
                             try:
-                                session = await svc.get_session(
-                                    app_name=APP_NAME,
-                                    user_id=req.user_id,
-                                    session_id=req.session_id,
-                                )
+                                session = await svc.get_session(app_name=APP_NAME, user_id=req.user_id, session_id=req.session_id)
                                 if session:
-                                    await svc.persist_state(
-                                        app_name=APP_NAME,
-                                        user_id=req.user_id,
-                                        session_id=req.session_id,
-                                        state=dict(session.state),
-                                    )
+                                    await svc.persist_state(app_name=APP_NAME, user_id=req.user_id, session_id=req.session_id, state=dict(session.state))
                             except Exception:
                                 pass
 
@@ -214,8 +231,8 @@ async def evaluate_subjective(req: SubjectiveEvalRequest):
     question = _find_question(current_test, req.question_id)
     if not question:
         raise HTTPException(status_code=404, detail=f"Question {req.question_id} not found.")
-    if question.get("type") != "subjective":
-        raise HTTPException(status_code=400, detail="Question is not subjective.")
+    if question.get("type") not in ("subjective", "short_answer", "long_answer"):
+        raise HTTPException(status_code=400, detail="Question is not a written answer question.")
 
     solution_steps = question.get("solution_steps", [])
     expected_answer = question.get("expected_answer", "")

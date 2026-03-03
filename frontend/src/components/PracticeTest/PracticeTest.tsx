@@ -17,7 +17,15 @@ export function PracticeTest({ test, userId, sessionId }: Props) {
         <p className="text-xs text-brand-600 mt-0.5">
           {test.board} · {test.grade} · {test.book}
         </p>
-        <p className="text-xs text-gray-500 mt-1">{test.questions.length} questions</p>
+        <div className="flex items-center gap-3 mt-2 flex-wrap">
+          <p className="text-xs text-gray-500">{test.questions.length} questions</p>
+          {test.total_marks && (
+            <p className="text-xs text-gray-500">{test.total_marks} marks</p>
+          )}
+          {test.duration_minutes && (
+            <p className="text-xs text-gray-500">{test.duration_minutes} min</p>
+          )}
+        </div>
       </div>
 
       {/* Questions */}

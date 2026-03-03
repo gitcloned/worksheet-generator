@@ -1,3 +1,40 @@
+// ── Book research ─────────────────────────────────────────────────────────
+
+export type BookTopic = {
+  id: string;
+  name: string;
+  subtopics: string[];
+};
+
+export type BookResearch = {
+  topics: BookTopic[];
+  question_formats: string[];
+  key_concepts: string[];
+  book: string;
+  board: string;
+  grade: string;
+};
+
+// ── Paper blueprint ───────────────────────────────────────────────────────
+
+export type CognitiveLevel = 'LOTS' | 'MOTS' | 'HOTS';
+
+export type PaperSection = {
+  type: 'mcq' | 'short_answer' | 'long_answer';
+  cognitive_level: CognitiveLevel;
+  count: number;
+  marks_each: number;
+  topics: string[];
+};
+
+export type PaperBlueprint = {
+  duration_minutes: number;
+  total_marks: number;
+  difficulty: string;
+  sections: PaperSection[];
+  selected_topics: string[];
+};
+
 // ── Test data structures (answer-key fields stripped by backend) ──────────
 
 export type MCQOption = {
@@ -8,13 +45,15 @@ export type MCQOption = {
 export type MCQQuestion = {
   id: string;
   type: 'mcq';
+  cognitive_level?: CognitiveLevel;
   text: string;
   options: MCQOption[];
 };
 
 export type SubjectiveQuestion = {
   id: string;
-  type: 'subjective';
+  type: 'subjective' | 'short_answer' | 'long_answer';
+  cognitive_level?: CognitiveLevel;
   text: string;
   marks: number;
 };
@@ -27,6 +66,8 @@ export type PracticeTest = {
   board: string;
   grade: string;
   book: string;
+  duration_minutes?: number;
+  total_marks?: number;
   questions: Question[];
 };
 
@@ -57,13 +98,17 @@ export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  artifact?: PracticeTest; // rendered inline when present
+  artifact?: PracticeTest;
+  research?: BookResearch;
+  blueprint?: PaperBlueprint;
 };
 
 // ── SSE event envelope from backend ──────────────────────────────────────
 
 export type SSEEvent =
   | { type: 'text_delta'; content: string }
+  | { type: 'research'; data: BookResearch }
+  | { type: 'blueprint'; data: PaperBlueprint }
   | { type: 'artifact'; test: PracticeTest }
   | { type: 'done' }
   | { type: 'error'; message: string };

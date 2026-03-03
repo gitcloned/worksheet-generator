@@ -45,12 +45,10 @@ export function useChat() {
 
       const { userId, sessionId } = identityRef.current;
 
-      // Append user message immediately
       const userMsg: ChatMessage = { id: generateId(), role: 'user', content: text };
       setMessages((prev) => [...prev, userMsg]);
       setIsLoading(true);
 
-      // Prepare assistant message placeholder (will be filled by stream)
       const assistantId = generateId();
       setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
 
@@ -61,11 +59,17 @@ export function useChat() {
               m.id === assistantId ? { ...m, content: m.content + event.content } : m,
             ),
           );
+        } else if (event.type === 'research') {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, research: event.data } : m)),
+          );
+        } else if (event.type === 'blueprint') {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, blueprint: event.data } : m)),
+          );
         } else if (event.type === 'artifact') {
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId ? { ...m, artifact: event.test } : m,
-            ),
+            prev.map((m) => (m.id === assistantId ? { ...m, artifact: event.test } : m)),
           );
         } else if (event.type === 'done') {
           setIsLoading(false);

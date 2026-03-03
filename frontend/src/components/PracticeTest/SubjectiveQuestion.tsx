@@ -50,7 +50,14 @@ export function SubjectiveQuestion({ question, index, testId, userId, sessionId 
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-2 mb-1">
         <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-          Question {index + 1} · Written ({question.marks} marks)
+          Question {index + 1} · {question.type === 'short_answer' ? 'Short Answer' : question.type === 'long_answer' ? 'Long Answer' : 'Written'} ({question.marks} marks)
+          {question.cognitive_level && (
+            <span className={`ml-2 rounded-full px-1.5 py-0.5 text-xs font-semibold ${
+              question.cognitive_level === 'LOTS' ? 'bg-green-100 text-green-700' :
+              question.cognitive_level === 'MOTS' ? 'bg-yellow-100 text-yellow-700' :
+              'bg-red-100 text-red-700'
+            }`}>{question.cognitive_level}</span>
+          )}
         </p>
       </div>
       <p className="mb-4 font-medium text-gray-800">{question.text}</p>

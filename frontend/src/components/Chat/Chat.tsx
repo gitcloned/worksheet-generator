@@ -12,7 +12,6 @@ export function Chat() {
     initSession();
   }, [initSession]);
 
-  // Auto-scroll on new content
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -30,6 +29,18 @@ export function Chat() {
       handleSend();
     }
   }
+
+  // Show typing indicator when loading and the last assistant message is still empty
+  const lastMsg = messages[messages.length - 1];
+  const showTyping =
+    isLoading &&
+    (!lastMsg ||
+      lastMsg.role === 'user' ||
+      (lastMsg.role === 'assistant' &&
+        !lastMsg.content &&
+        !lastMsg.artifact &&
+        !lastMsg.research &&
+        !lastMsg.blueprint));
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -57,12 +68,17 @@ export function Chat() {
         )}
 
         {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} userId={userId} sessionId={sessionId} />
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            userId={userId}
+            sessionId={sessionId}
+            sendMessage={sendMessage}
+            isLoading={isLoading}
+          />
         ))}
 
-        {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-          <TypingIndicator />
-        )}
+        {showTyping && <TypingIndicator />}
 
         <div ref={bottomRef} />
       </main>
