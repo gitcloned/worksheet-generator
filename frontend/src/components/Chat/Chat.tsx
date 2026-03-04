@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useChat } from '../../hooks/useChat';
 import { MessageBubble } from './MessageBubble';
 
-export function Chat() {
-  const { messages, isLoading, sessionReady, initSession, sendMessage, userId, sessionId } =
-    useChat();
+type Props = {
+  userId?: string;
+};
+
+export function Chat({ userId }: Props) {
+  const { messages, isLoading, sessionReady, initSession, sendMessage, userId: chatUserId, sessionId, lastTestId } =
+    useChat(userId);
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -46,13 +51,28 @@ export function Chat() {
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
       <header className="flex-shrink-0 border-b border-gray-200 bg-white px-4 py-3 flex items-center gap-3 shadow-sm">
+        <Link
+          to="/tests"
+          className="text-sm text-gray-500 hover:text-gray-800 flex items-center gap-1 mr-1"
+        >
+          <span>←</span>
+          <span className="hidden sm:inline">My Tests</span>
+        </Link>
         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white font-bold text-sm">
           AI
         </div>
-        <div>
+        <div className="flex-1">
           <p className="font-semibold text-gray-800 text-sm">AI Practice Tutor</p>
           <p className="text-xs text-green-500">Online</p>
         </div>
+        {lastTestId && (
+          <Link
+            to={`/tests/${lastTestId}`}
+            className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100 transition-colors flex-shrink-0"
+          >
+            View in Library →
+          </Link>
+        )}
       </header>
 
       {/* Messages */}
@@ -71,7 +91,7 @@ export function Chat() {
           <MessageBubble
             key={msg.id}
             message={msg}
-            userId={userId}
+            userId={chatUserId}
             sessionId={sessionId}
             sendMessage={sendMessage}
             isLoading={isLoading}

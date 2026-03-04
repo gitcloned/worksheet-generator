@@ -1,36 +1,31 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createSession, streamChat } from '../api/client';
+import { supabase } from '../lib/supabase';
 import type { ChatMessage, SSEEvent } from '../types';
 
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function getOrCreateIdentity(): { userId: string; sessionId: string } {
-  let userId = localStorage.getItem('userId');
-  let sessionId = localStorage.getItem('sessionId');
-
-  if (!userId) {
-    userId = generateId();
-    localStorage.setItem('userId', userId);
-  }
-  if (!sessionId) {
-    sessionId = generateId();
-    localStorage.setItem('sessionId', sessionId);
-  }
-
-  return { userId, sessionId };
-}
-
-export function useChat() {
+export function useChat(externalUserId?: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
-  const identityRef = useRef(getOrCreateIdentity());
+  const [lastTestId, setLastTestId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string>(generateId());
   const abortRef = useRef<AbortController | null>(null);
 
+  // Use provided userId (from auth) or fall back to a local random one
+  const userIdRef = useRef<string>(externalUserId ?? generateId());
+  useEffect(() => {
+    if (externalUserId) {
+      userIdRef.current = externalUserId;
+    }
+  }, [externalUserId]);
+
   const initSession = useCallback(async () => {
-    const { userId, sessionId } = identityRef.current;
+    const userId = userIdRef.current;
+    const sessionId = sessionIdRef.current;
     try {
       await createSession(userId, sessionId);
       setSessionReady(true);
@@ -43,7 +38,12 @@ export function useChat() {
     async (text: string) => {
       if (isLoading) return;
 
-      const { userId, sessionId } = identityRef.current;
+      const userId = userIdRef.current;
+      const sessionId = sessionIdRef.current;
+
+      // Get current access token for auth header
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
 
       const userMsg: ChatMessage = { id: generateId(), role: 'user', content: text };
       setMessages((prev) => [...prev, userMsg]);
@@ -71,6 +71,7 @@ export function useChat() {
           setMessages((prev) =>
             prev.map((m) => (m.id === assistantId ? { ...m, artifact: event.test } : m)),
           );
+          setLastTestId(event.test.test_id);
         } else if (event.type === 'done') {
           setIsLoading(false);
         } else if (event.type === 'error') {
@@ -83,12 +84,19 @@ export function useChat() {
           );
           setIsLoading(false);
         }
-      });
+      }, accessToken);
     },
     [isLoading],
   );
 
-  const { userId, sessionId } = identityRef.current;
-
-  return { messages, isLoading, sessionReady, initSession, sendMessage, userId, sessionId };
+  return {
+    messages,
+    isLoading,
+    sessionReady,
+    initSession,
+    sendMessage,
+    userId: userIdRef.current,
+    sessionId: sessionIdRef.current,
+    lastTestId,
+  };
 }

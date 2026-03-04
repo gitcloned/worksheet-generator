@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: worksheet-generator-api
+    name: ai-practice-api
     runtime: python
     buildCommand: cd backend && pip install -r requirements.txt
     startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
@@ -11,7 +11,11 @@ services:
         value: false
       - key: APP_NAME
         value: ai-practice-mvp
-      - key: DB_PATH
-        value: data/sessions.db
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
       - key: ALLOWED_ORIGINS
+        sync: false
+      - key: FRONTEND_BASE_URL
         sync: false

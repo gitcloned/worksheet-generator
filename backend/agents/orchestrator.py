@@ -1,19 +1,20 @@
 import os
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
+import asyncpg
 
 from .prompts import ORCHESTRATOR_PROMPT
 from .tools import research_book, design_blueprint, generate_questions
-from db.session_service import SQLiteSessionService
+from db.session_service import PostgresSessionService
 
 APP_NAME = os.getenv("APP_NAME", "ai-practice-mvp")
 
 # Shared session service and runner — initialized at startup
-session_service: SQLiteSessionService | None = None
+session_service: PostgresSessionService | None = None
 runner: Runner | None = None
 
 
-def build_runner(db_path: str) -> Runner:
+def build_runner(pool: asyncpg.Pool) -> Runner:
     """Build and return the ADK runner with the orchestrator agent."""
     global session_service, runner
 
@@ -24,7 +25,7 @@ def build_runner(db_path: str) -> Runner:
         tools=[research_book, design_blueprint, generate_questions],
     )
 
-    session_service = SQLiteSessionService(db_path=db_path)
+    session_service = PostgresSessionService(pool=pool)
 
     runner = Runner(
         agent=orchestrator,
@@ -41,7 +42,7 @@ def get_runner() -> Runner:
     return runner
 
 
-def get_session_service() -> SQLiteSessionService:
+def get_session_service() -> PostgresSessionService:
     if session_service is None:
         raise RuntimeError("Session service not initialized. Call build_runner() first.")
     return session_service
@@ -57,12 +58,18 @@ async def create_new_session(user_id: str, session_id: str) -> None:
     )
     if existing is not None:
         return  # already exists — nothing to do
-    await svc.create_session(
-        app_name=APP_NAME,
-        user_id=user_id,
-        session_id=session_id,
-        state={},
-    )
+    try:
+        await svc.create_session(
+            app_name=APP_NAME,
+            user_id=user_id,
+            session_id=session_id,
+            state={},
+        )
+    except Exception:
+        # Race condition: React Strict Mode double-invokes effects, so two concurrent
+        # requests can both pass the get_session check and then race on create.
+        # If the session now exists, that's fine — just ignore the error.
+        pass
 
 
 async def get_session_state(user_id: str, session_id: str) -> dict:

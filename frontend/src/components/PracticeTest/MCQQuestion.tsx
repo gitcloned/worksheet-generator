@@ -9,15 +9,17 @@ type Props = {
   testId: string;
   userId: string;
   sessionId: string;
+  readOnly?: boolean;
+  initialFeedback?: MCQFeedback;
 };
 
-export function MCQQuestion({ question, index, testId, userId, sessionId }: Props) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<MCQFeedback | null>(null);
+export function MCQQuestion({ question, index, testId, userId, sessionId, readOnly, initialFeedback }: Props) {
+  const [selected, setSelected] = useState<string | null>(initialFeedback?.selected_option ?? null);
+  const [feedback, setFeedback] = useState<MCQFeedback | null>(initialFeedback ?? null);
   const [loading, setLoading] = useState(false);
 
   async function handleSelect(optionId: string) {
-    if (feedback || loading) return; // already answered
+    if (feedback || loading || readOnly) return;
 
     setSelected(optionId);
     setLoading(true);
@@ -36,6 +38,7 @@ export function MCQQuestion({ question, index, testId, userId, sessionId }: Prop
     const base = 'flex items-center gap-3 w-full rounded-lg border px-4 py-3 text-left text-sm transition-colors';
 
     if (!feedback) {
+      if (readOnly) return `${base} border-gray-100 text-gray-500 cursor-default`;
       if (selected === optionId) return `${base} border-brand-500 bg-brand-50 text-brand-700`;
       return `${base} border-gray-200 hover:border-brand-300 hover:bg-gray-50 cursor-pointer`;
     }
@@ -59,7 +62,7 @@ export function MCQQuestion({ question, index, testId, userId, sessionId }: Prop
             key={opt.id}
             className={optionStyle(opt.id)}
             onClick={() => handleSelect(opt.id)}
-            disabled={!!feedback || loading}
+            disabled={!!feedback || loading || readOnly}
           >
             <span className="flex-shrink-0 w-6 h-6 rounded-full border border-current flex items-center justify-center text-xs font-bold">
               {opt.id}
@@ -71,6 +74,10 @@ export function MCQQuestion({ question, index, testId, userId, sessionId }: Prop
 
       {loading && (
         <p className="mt-3 text-xs text-gray-400 animate-pulse">Checking your answer…</p>
+      )}
+
+      {readOnly && !feedback && (
+        <p className="mt-3 text-xs text-gray-400 italic">Not answered</p>
       )}
 
       {feedback && <QuestionFeedback feedback={feedback} />}

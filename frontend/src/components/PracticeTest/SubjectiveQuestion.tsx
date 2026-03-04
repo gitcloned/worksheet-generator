@@ -9,12 +9,14 @@ type Props = {
   testId: string;
   userId: string;
   sessionId: string;
+  readOnly?: boolean;
+  initialFeedback?: SubjectiveFeedback;
 };
 
-export function SubjectiveQuestion({ question, index, testId, userId, sessionId }: Props) {
+export function SubjectiveQuestion({ question, index, testId, userId, sessionId, readOnly, initialFeedback }: Props) {
   const [preview, setPreview] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<SubjectiveFeedback | null>(null);
+  const [feedback, setFeedback] = useState<SubjectiveFeedback | null>(initialFeedback ?? null);
   const [loading, setLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -62,7 +64,11 @@ export function SubjectiveQuestion({ question, index, testId, userId, sessionId 
       </div>
       <p className="mb-4 font-medium text-gray-800">{question.text}</p>
 
-      {!feedback && (
+      {readOnly && !feedback && (
+        <p className="text-xs text-gray-400 italic">Not answered</p>
+      )}
+
+      {!readOnly && !feedback && (
         <>
           {/* Camera / file upload */}
           <input

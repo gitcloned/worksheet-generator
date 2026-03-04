@@ -1,5 +1,6 @@
+from datetime import datetime
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, Optional
 
 
 class CreateSessionRequest(BaseModel):
@@ -49,3 +50,78 @@ class SubjectiveFeedback(BaseModel):
     explanation: str
     step_feedback: list[str]
     next_step_hint: str
+
+
+# ---------------------------------------------------------------------------
+# Auth / Profile
+# ---------------------------------------------------------------------------
+
+class ProfileCreateRequest(BaseModel):
+    role: Literal["parent", "student"]
+    display_name: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Test library
+# ---------------------------------------------------------------------------
+
+class TestSummary(BaseModel):
+    id: str
+    topic: Optional[str] = None
+    board: Optional[str] = None
+    grade: Optional[str] = None
+    book: Optional[str] = None
+    question_count: Optional[int] = None
+    total_marks: Optional[int] = None
+    duration_minutes: Optional[int] = None
+    created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Parent-child
+# ---------------------------------------------------------------------------
+
+class AddChildRequest(BaseModel):
+    child_email: str
+
+
+class ChildInfo(BaseModel):
+    id: Optional[str] = None
+    child_email: str
+    child_id: Optional[str] = None
+    display_name: Optional[str] = None
+    created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Assignments
+# ---------------------------------------------------------------------------
+
+class AssignmentCreateRequest(BaseModel):
+    test_id: str
+    child_email: str
+
+
+class AssignmentResponse(BaseModel):
+    id: str
+    token: str
+    link: str
+    expires_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Assignment evaluation (token-based, no user session)
+# ---------------------------------------------------------------------------
+
+class AssignmentMCQEvalRequest(BaseModel):
+    assignment_id: str
+    test_id: str
+    question_id: str
+    selected_option: str
+
+
+class AssignmentSubjectiveEvalRequest(BaseModel):
+    assignment_id: str
+    test_id: str
+    question_id: str
+    image_base64: str
