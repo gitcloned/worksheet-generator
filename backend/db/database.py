@@ -14,7 +14,7 @@ _pool: asyncpg.Pool | None = None
 async def init_db() -> asyncpg.Pool:
     """Create and return the asyncpg connection pool."""
     global _pool
-    _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
+    _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10, ssl='require')
     return _pool
 
 
@@ -205,7 +205,7 @@ async def save_answer(
         question_id,
         question_type,
         selected_option,
-        json.loads(feedback_json) if isinstance(feedback_json, str) else feedback_json,
+        feedback_json if isinstance(feedback_json, str) else json.dumps(feedback_json),
     )
 
 
