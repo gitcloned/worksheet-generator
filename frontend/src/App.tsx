@@ -7,6 +7,9 @@ import { TestsPage } from './pages/TestsPage';
 import { CreateTestPage } from './pages/CreateTestPage';
 import { TestViewerPage } from './pages/TestViewerPage';
 import { TakeTestPage } from './pages/TakeTestPage';
+import { SelfTakeTestPage } from './pages/SelfTakeTestPage';
+import { ChildPage } from './pages/ChildPage';
+import { AssignmentReviewPage } from './pages/AssignmentReviewPage';
 
 export default function App() {
   return (
@@ -21,6 +24,9 @@ export default function App() {
           <Route path="/tests" element={<TestsPage />} />
           <Route path="/tests/new" element={<CreateTestPage />} />
           <Route path="/tests/:testId" element={<TestViewerPage />} />
+          <Route path="/tests/:testId/take" element={<SelfTakeTestPage />} />
+          <Route path="/children/:childId" element={<ChildPage />} />
+          <Route path="/assignment/:token/review" element={<AssignmentReviewPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

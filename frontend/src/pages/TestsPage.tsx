@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getTests, getChildren, addChild } from '../api/client';
+import { getTests, getChildren, addChild, getStudentAssignments } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { TestCard } from '../components/TestCard';
+import { DataGrid } from '../components/DataGrid';
 import type { TestSummary } from '../components/TestCard';
+import type { StudentAssignment } from '../types';
 
 type Child = {
   id: string;
@@ -19,23 +21,33 @@ export function TestsPage() {
 
   const [tests, setTests] = useState<TestSummary[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
+  const [studentAssignments, setStudentAssignments] = useState<StudentAssignment[]>([]);
   const [loadingTests, setLoadingTests] = useState(true);
   const [showAddChild, setShowAddChild] = useState(false);
   const [childEmail, setChildEmail] = useState('');
   const [addingChild, setAddingChild] = useState(false);
 
   const isParent = profile?.role === 'parent';
+  const isStudent = profile?.role === 'student';
 
   useEffect(() => {
-    getTests()
-      .then(setTests)
-      .catch(console.error)
-      .finally(() => setLoadingTests(false));
-
     if (isParent) {
-      getChildren().then(setChildren).catch(console.error);
+      Promise.all([getTests(), getChildren()])
+        .then(([t, c]) => { setTests(t); setChildren(c); })
+        .catch(console.error)
+        .finally(() => setLoadingTests(false));
+    } else if (isStudent) {
+      getStudentAssignments()
+        .then(setStudentAssignments)
+        .catch(console.error)
+        .finally(() => setLoadingTests(false));
+    } else {
+      getTests()
+        .then(setTests)
+        .catch(console.error)
+        .finally(() => setLoadingTests(false));
     }
-  }, [isParent]);
+  }, [isParent, isStudent]);
 
   async function handleAddChild(e: React.FormEvent) {
     e.preventDefault();
@@ -79,108 +91,179 @@ export function TestsPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-8">
-        {/* Tests section */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-900">My Tests</h2>
-            <button
-              onClick={() => navigate('/tests/new')}
-              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 transition-colors shadow-sm"
-            >
-              + Create New Test
-            </button>
+        {loadingTests ? (
+          <div className="flex justify-center py-12">
+            <div className="w-6 h-6 rounded-full border-2 border-brand-400 border-t-transparent animate-spin" />
           </div>
-
-          {loadingTests ? (
-            <div className="flex justify-center py-8">
-              <div className="w-6 h-6 rounded-full border-2 border-brand-400 border-t-transparent animate-spin" />
-            </div>
-          ) : tests.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
-              <p className="text-3xl mb-2">📄</p>
-              <p className="font-medium text-gray-700">No tests yet</p>
-              <p className="text-sm text-gray-500 mt-1">Create your first test to get started!</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {tests.map((test) => (
-                <TestCard key={test.id} test={test} />
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Children section (parents only) */}
-        {isParent && (
+        ) : isStudent ? (
+          /* Student view — My Assignments */
           <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-gray-900">My Children</h2>
-              <button
-                onClick={() => setShowAddChild(true)}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
-              >
-                + Add Child
-              </button>
-            </div>
-
-            {showAddChild && (
-              <form
-                onSubmit={handleAddChild}
-                className="mb-4 rounded-xl border border-gray-200 bg-white p-4 flex gap-2"
-              >
-                <input
-                  type="email"
-                  value={childEmail}
-                  onChange={(e) => setChildEmail(e.target.value)}
-                  placeholder="Child's email address"
-                  className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400"
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  disabled={addingChild || !childEmail.trim()}
-                  className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 transition-colors"
-                >
-                  {addingChild ? 'Adding…' : 'Add'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddChild(false)}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-              </form>
-            )}
-
-            {children.length === 0 ? (
-              <p className="text-sm text-gray-500 py-2">No children added yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {children.map((child) => (
-                  <div
-                    key={child.id}
-                    className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-600">
-                      {child.display_name?.charAt(0).toUpperCase() ?? child.child_email.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">
-                        {child.display_name ?? child.child_email}
+            <h2 className="font-semibold text-gray-900 mb-4">My Assignments</h2>
+            <DataGrid<StudentAssignment>
+              data={studentAssignments}
+              emptyMessage="No assignments yet. Ask your teacher to assign you a test."
+              columns={[
+                {
+                  header: 'Test',
+                  render: (row) => (
+                    <div>
+                      <p className="font-medium text-gray-800 line-clamp-1">{row.topic}</p>
+                      <p className="text-xs text-gray-400">
+                        {[row.board, row.grade && `Grade ${row.grade}`].filter(Boolean).join(' · ')}
                       </p>
-                      {child.display_name && (
-                        <p className="text-xs text-gray-400 truncate">{child.child_email}</p>
-                      )}
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${child.child_id ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
-                      {child.child_id ? 'Joined' : 'Pending'}
+                  ),
+                },
+                {
+                  header: 'From',
+                  render: (row) => (
+                    <span className="text-sm text-gray-600">{row.assigned_by_name ?? '—'}</span>
+                  ),
+                },
+                {
+                  header: 'Mode',
+                  render: (row) => (
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${row.mode === 'exam' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                      {row.mode}
                     </span>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ),
+                },
+                {
+                  header: 'Score',
+                  render: (row) => row.score ? (
+                    <span className="font-medium text-gray-800">{row.score.earned_marks}/{row.score.total_marks || row.total_marks || '?'}</span>
+                  ) : <span className="text-gray-400">—</span>,
+                },
+                {
+                  header: 'Status',
+                  render: (row) => (
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      row.status === 'completed' ? 'bg-blue-100 text-blue-700' :
+                      row.status === 'started' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {row.status}
+                    </span>
+                  ),
+                },
+                {
+                  header: '',
+                  render: (row) => (
+                    <a
+                      href={`/take-test/${row.token}`}
+                      className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 transition-colors"
+                    >
+                      {row.status === 'completed' ? 'Retake' : 'Start'}
+                    </a>
+                  ),
+                },
+              ]}
+            />
           </section>
+        ) : (
+          <>
+            {/* Tests section (parent / no-role) */}
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-gray-900">My Tests</h2>
+                <button
+                  onClick={() => navigate('/tests/new')}
+                  className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 transition-colors shadow-sm"
+                >
+                  + Create New Test
+                </button>
+              </div>
+
+              {tests.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
+                  <p className="text-3xl mb-2">📄</p>
+                  <p className="font-medium text-gray-700">No tests yet</p>
+                  <p className="text-sm text-gray-500 mt-1">Create your first test to get started!</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {tests.map((test) => (
+                    <TestCard key={test.id} test={test} />
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* Children section (parents only) */}
+            {isParent && (
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="font-semibold text-gray-900">My Children</h2>
+                  <button
+                    onClick={() => setShowAddChild(true)}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    + Add Child
+                  </button>
+                </div>
+
+                {showAddChild && (
+                  <form
+                    onSubmit={handleAddChild}
+                    className="mb-4 rounded-xl border border-gray-200 bg-white p-4 flex gap-2"
+                  >
+                    <input
+                      type="email"
+                      value={childEmail}
+                      onChange={(e) => setChildEmail(e.target.value)}
+                      placeholder="Child's email address"
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400"
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      disabled={addingChild || !childEmail.trim()}
+                      className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 transition-colors"
+                    >
+                      {addingChild ? 'Adding…' : 'Add'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddChild(false)}
+                      className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </form>
+                )}
+
+                {children.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-2">No children added yet.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-3">
+                    {children.map((child) => (
+                      <button
+                        key={child.id}
+                        onClick={() => navigate(`/children/${child.id}`)}
+                        className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 hover:border-brand-400 hover:shadow-md transition-all text-left"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white font-bold text-sm">
+                          {(child.display_name ?? child.child_email).charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 truncate">
+                            {child.display_name ?? child.child_email}
+                          </p>
+                          {child.display_name && (
+                            <p className="text-xs text-gray-400 truncate">{child.child_email}</p>
+                          )}
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${child.child_id ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
+                            {child.child_id ? 'Joined' : 'Pending'}
+                          </span>
+                        </div>
+                        <span className="text-gray-300 text-sm">→</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+          </>
         )}
       </main>
     </div>

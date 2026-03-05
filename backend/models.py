@@ -100,6 +100,8 @@ class ChildInfo(BaseModel):
 class AssignmentCreateRequest(BaseModel):
     test_id: str
     child_email: str
+    mode: Literal["practice", "exam"] = "practice"
+    time_multiplier: float = 1.0
 
 
 class AssignmentResponse(BaseModel):
@@ -107,6 +109,15 @@ class AssignmentResponse(BaseModel):
     token: str
     link: str
     expires_at: datetime
+    mode: str
+    time_multiplier: float
+
+
+class AttemptScoreResponse(BaseModel):
+    attempted: int
+    earned_marks: int
+    total_marks: int
+    completed_at: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------------------
@@ -123,5 +134,21 @@ class AssignmentMCQEvalRequest(BaseModel):
 class AssignmentSubjectiveEvalRequest(BaseModel):
     assignment_id: str
     test_id: str
+    question_id: str
+    image_base64: str
+
+
+# ---------------------------------------------------------------------------
+# Self-test evaluation (creator takes their own test, auth required)
+# ---------------------------------------------------------------------------
+
+class SelfTestMCQEvalRequest(BaseModel):
+    session_id: str
+    question_id: str
+    selected_option: str
+
+
+class SelfTestSubjectiveEvalRequest(BaseModel):
+    session_id: str
     question_id: str
     image_base64: str

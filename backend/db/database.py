@@ -239,6 +239,8 @@ async def create_assignment(
     test_id: str,
     assigned_by: str,
     assigned_to_email: str,
+    mode: str = "practice",
+    time_multiplier: float = 1.0,
     token_expires_days: int = 30,
 ) -> dict:
     """Create a test assignment and return the assignment row with token."""
@@ -259,9 +261,9 @@ async def create_assignment(
     row = await pool.fetchrow(
         """
         INSERT INTO test_assignments
-            (test_id, assigned_by, assigned_to, assigned_to_email, token, token_expires_at)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id::text, test_id, token, token_expires_at, status, created_at
+            (test_id, assigned_by, assigned_to, assigned_to_email, token, token_expires_at, mode, time_multiplier)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id::text, test_id, token, token_expires_at, status, created_at, mode, time_multiplier
         """,
         test_id,
         assigned_by,
@@ -269,6 +271,8 @@ async def create_assignment(
         assigned_to_email,
         token,
         expires_at,
+        mode,
+        time_multiplier,
     )
     return dict(row)
 
@@ -279,6 +283,7 @@ async def get_assignment_by_token(pool: asyncpg.Pool, token: str) -> dict | None
         """
         SELECT a.id::text AS assignment_id, a.test_id, a.status,
                a.token_expires_at, a.assigned_to_email,
+               a.mode, a.time_multiplier,
                t.test_data
         FROM test_assignments a
         JOIN tests t ON t.id = a.test_id
@@ -293,7 +298,54 @@ async def get_assignment_by_token(pool: asyncpg.Pool, token: str) -> dict | None
         return None  # expired
     if isinstance(d["test_data"], str):
         d["test_data"] = json.loads(d["test_data"])
+    d["time_multiplier"] = float(d["time_multiplier"])
     return d
+
+
+async def get_last_attempt_score(
+    pool: asyncpg.Pool,
+    assignment_id: str,
+    test_id: str,
+) -> dict | None:
+    """Compute score for the last attempt on an assignment."""
+    rows = await pool.fetch(
+        """
+        SELECT question_type, feedback_json, answered_at
+        FROM test_answers
+        WHERE assignment_id = $1 AND test_id = $2
+        ORDER BY answered_at ASC
+        """,
+        assignment_id,
+        test_id,
+    )
+    if not rows:
+        return None
+
+    attempted = len(rows)
+    earned_marks = 0
+    completed_at = None
+
+    for r in rows:
+        fb = r["feedback_json"]
+        if isinstance(fb, str):
+            fb = json.loads(fb)
+        if r["question_type"] == "mcq":
+            if fb.get("correct"):
+                earned_marks += 1
+        else:
+            earned_marks += fb.get("score", 0)
+        if completed_at is None or r["answered_at"] > completed_at:
+            completed_at = r["answered_at"]
+
+    test_row = await pool.fetchrow("SELECT total_marks FROM tests WHERE id = $1", test_id)
+    total_marks = test_row["total_marks"] if test_row else 0
+
+    return {
+        "attempted": attempted,
+        "earned_marks": earned_marks,
+        "total_marks": total_marks,
+        "completed_at": completed_at,
+    }
 
 
 async def update_assignment_status(pool: asyncpg.Pool, assignment_id: str, status: str) -> None:
@@ -303,3 +355,148 @@ async def update_assignment_status(pool: asyncpg.Pool, assignment_id: str, statu
         status,
         assignment_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Parent child-wise views
+# ---------------------------------------------------------------------------
+
+async def get_child_assignments(
+    pool: asyncpg.Pool,
+    parent_id: str,
+    child_email: str,
+) -> list[dict]:
+    """Return all assignments made by parent to a specific child email, with last-attempt scores."""
+    rows = await pool.fetch(
+        """
+        SELECT a.id::text AS assignment_id, a.test_id, a.token, a.status,
+               a.mode, a.time_multiplier, a.created_at,
+               t.topic, t.board, t.grade, t.total_marks, t.duration_minutes, t.question_count
+        FROM test_assignments a
+        JOIN tests t ON t.id = a.test_id
+        WHERE a.assigned_by = $1 AND a.assigned_to_email = $2
+        ORDER BY a.created_at DESC
+        """,
+        parent_id,
+        child_email,
+    )
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["time_multiplier"] = float(d["time_multiplier"])
+        score = await get_last_attempt_score(pool, d["assignment_id"], d["test_id"])
+        d["score"] = score
+        result.append(d)
+    return result
+
+
+async def get_unassigned_tests(
+    pool: asyncpg.Pool,
+    parent_id: str,
+    child_email: str,
+) -> list[dict]:
+    """Return tests created by parent not yet assigned to this child email."""
+    rows = await pool.fetch(
+        """
+        SELECT id, topic, board, grade, book, total_marks, duration_minutes,
+               question_count, created_at
+        FROM tests
+        WHERE creator_id = $1
+          AND id NOT IN (
+              SELECT test_id FROM test_assignments
+              WHERE assigned_by = $1 AND assigned_to_email = $2
+          )
+        ORDER BY created_at DESC
+        """,
+        parent_id,
+        child_email,
+    )
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Student dashboard
+# ---------------------------------------------------------------------------
+
+async def get_student_assignments(
+    pool: asyncpg.Pool,
+    student_id: str,
+) -> list[dict]:
+    """Return all assignments for a student (matched by user ID or email), with scores."""
+    rows = await pool.fetch(
+        """
+        SELECT a.id::text AS assignment_id, a.test_id, a.token, a.status,
+               a.mode, a.time_multiplier, a.created_at, a.assigned_to_email,
+               t.topic, t.board, t.grade, t.total_marks, t.duration_minutes, t.question_count,
+               p.display_name AS assigned_by_name
+        FROM test_assignments a
+        JOIN tests t ON t.id = a.test_id
+        LEFT JOIN profiles p ON p.id = a.assigned_by
+        WHERE a.assigned_to = $1
+           OR a.assigned_to_email = (
+               SELECT u.email FROM auth.users u WHERE u.id = $1
+           )
+        ORDER BY a.created_at DESC
+        """,
+        student_id,
+    )
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["time_multiplier"] = float(d["time_multiplier"])
+        score = await get_last_attempt_score(pool, d["assignment_id"], d["test_id"])
+        d["score"] = score
+        result.append(d)
+    return result
+
+
+async def get_assignment_review(
+    pool: asyncpg.Pool,
+    token: str,
+    requester_id: str,
+) -> dict | None:
+    """Return full assignment with child's answers for parent review. Requester must be assigner."""
+    row = await pool.fetchrow(
+        """
+        SELECT a.id::text AS assignment_id, a.test_id, a.status,
+               a.assigned_to_email, a.assigned_by::text,
+               a.mode, a.time_multiplier,
+               t.test_data
+        FROM test_assignments a
+        JOIN tests t ON t.id = a.test_id
+        WHERE a.token = $1
+        """,
+        token,
+    )
+    if row is None:
+        return None
+    d = dict(row)
+    if d["assigned_by"] != requester_id:
+        return None  # not authorized
+
+    test_data = json.loads(d["test_data"]) if isinstance(d["test_data"], str) else d["test_data"]
+    d["time_multiplier"] = float(d["time_multiplier"])
+
+    answer_rows = await pool.fetch(
+        """
+        SELECT question_id, question_type, selected_option, feedback_json, answered_at
+        FROM test_answers
+        WHERE assignment_id = $1 AND test_id = $2
+        ORDER BY answered_at ASC
+        """,
+        d["assignment_id"],
+        d["test_id"],
+    )
+
+    answers_by_qid: dict[str, Any] = {}
+    for ar in answer_rows:
+        ad = dict(ar)
+        if isinstance(ad["feedback_json"], str):
+            ad["feedback_json"] = json.loads(ad["feedback_json"])
+        answers_by_qid[ad["question_id"]] = ad
+
+    d["test"] = test_data
+    d["answers"] = answers_by_qid
+    del d["test_data"]
+    del d["assigned_by"]
+    return d

@@ -173,12 +173,17 @@ export async function addChild(childEmail: string) {
 
 // ── Assignments ───────────────────────────────────────────────────────────
 
-export async function createAssignment(testId: string, childEmail: string) {
+export async function createAssignment(
+  testId: string,
+  childEmail: string,
+  mode: 'practice' | 'exam' = 'practice',
+  timeMultiplier: number = 1.0,
+) {
   const headers = await authHeaders();
   const res = await fetch(`${BASE}/assignments`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ test_id: testId, child_email: childEmail }),
+    body: JSON.stringify({ test_id: testId, child_email: childEmail, mode, time_multiplier: timeMultiplier }),
   });
   if (!res.ok) throw new Error('Failed to create assignment');
   return res.json();
@@ -211,6 +216,21 @@ export async function evaluateMCQForAssignment(
   return res.json();
 }
 
+export async function getLastAttempt(token: string) {
+  const res = await fetch(`${BASE}/assignment/${token}/last-attempt`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function completeAssignment(token: string) {
+  const res = await fetch(`${BASE}/assignment/${token}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error('Failed to complete assignment');
+  return res.json();
+}
+
 export async function evaluateSubjectiveForAssignment(
   token: string,
   assignmentId: string,
@@ -227,6 +247,70 @@ export async function evaluateSubjectiveForAssignment(
       question_id: questionId,
       image_base64: imageBase64,
     }),
+  });
+  if (!res.ok) throw new Error('Subjective evaluation failed');
+  return res.json();
+}
+
+// ── Parent / student dashboard ────────────────────────────────────────────
+
+export async function getChildAssignments(childId: string) {
+  const headers = await authHeaders();
+  const res = await fetch(`${BASE}/parent/children/${childId}/assignments`, { headers });
+  if (!res.ok) throw new Error('Failed to fetch child assignments');
+  return res.json();
+}
+
+export async function getUnassignedTests(childId: string) {
+  const headers = await authHeaders();
+  const res = await fetch(`${BASE}/parent/children/${childId}/unassigned-tests`, { headers });
+  if (!res.ok) throw new Error('Failed to fetch unassigned tests');
+  return res.json();
+}
+
+export async function getStudentAssignments() {
+  const headers = await authHeaders();
+  const res = await fetch(`${BASE}/student/assignments`, { headers });
+  if (!res.ok) throw new Error('Failed to fetch student assignments');
+  return res.json();
+}
+
+export async function getAssignmentReview(token: string) {
+  const headers = await authHeaders();
+  const res = await fetch(`${BASE}/assignment/${token}/review`, { headers });
+  if (!res.ok) throw new Error('Assignment not found or not authorized');
+  return res.json();
+}
+
+// ── Self-test evaluation (creator takes their own test) ────────────────────
+
+export async function evaluateMCQForSelfTest(
+  testId: string,
+  sessionId: string,
+  questionId: string,
+  selectedOption: string,
+): Promise<MCQFeedback> {
+  const headers = await authHeaders();
+  const res = await fetch(`${BASE}/tests/${testId}/evaluate/mcq`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ session_id: sessionId, question_id: questionId, selected_option: selectedOption }),
+  });
+  if (!res.ok) throw new Error('MCQ evaluation failed');
+  return res.json();
+}
+
+export async function evaluateSubjectiveForSelfTest(
+  testId: string,
+  sessionId: string,
+  questionId: string,
+  imageBase64: string,
+): Promise<SubjectiveFeedback> {
+  const headers = await authHeaders();
+  const res = await fetch(`${BASE}/tests/${testId}/evaluate/subjective`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ session_id: sessionId, question_id: questionId, image_base64: imageBase64 }),
   });
   if (!res.ok) throw new Error('Subjective evaluation failed');
   return res.json();

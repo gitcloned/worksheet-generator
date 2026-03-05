@@ -92,6 +92,71 @@ export type SubjectiveFeedback = {
 
 export type QuestionFeedback = MCQFeedback | SubjectiveFeedback;
 
+// ── Test-taking modes ─────────────────────────────────────────────────────
+
+export type TestMode = 'practice' | 'exam';
+export type TimeMultiplier = 1.0 | 1.5 | 2.0;
+
+export type LastAttempt = {
+  attempted: number;
+  earned_marks: number;
+  total_marks: number;
+  completed_at?: string;
+};
+
+export type PendingMCQAnswer = {
+  type: 'mcq';
+  selectedOption: string;
+};
+
+export type PendingSubjectiveAnswer = {
+  type: 'subjective';
+  imageBase64: string;
+  previewUrl: string;
+};
+
+export type PendingAnswer = PendingMCQAnswer | PendingSubjectiveAnswer;
+
+// ── Dashboard data types ──────────────────────────────────────────────────
+
+export type AssignmentSummary = {
+  assignment_id: string;
+  test_id: string;
+  token: string;
+  status: 'pending' | 'started' | 'completed';
+  mode: TestMode;
+  time_multiplier: number;
+  created_at: string;
+  topic: string;
+  board?: string;
+  grade?: string;
+  total_marks?: number;
+  duration_minutes?: number;
+  question_count?: number;
+  score: LastAttempt | null;
+};
+
+export type StudentAssignment = AssignmentSummary & {
+  assigned_to_email: string;
+  assigned_by_name: string | null;
+};
+
+export type AssignmentReview = {
+  assignment_id: string;
+  test_id: string;
+  status: string;
+  assigned_to_email: string;
+  mode: TestMode;
+  time_multiplier: number;
+  test: PracticeTest;
+  answers: Record<string, {
+    question_type: string;
+    selected_option: string | null;
+    feedback_json: MCQFeedback | SubjectiveFeedback | null;
+    answered_at: string;
+  }>;
+};
+
 // ── Chat message types ────────────────────────────────────────────────────
 
 export type ChatMessage = {

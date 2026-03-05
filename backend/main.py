@@ -31,11 +31,17 @@ from db.database import (
     create_assignment,
     get_assignment_by_token,
     update_assignment_status,
+    get_last_attempt_score,
+    get_child_assignments,
+    get_unassigned_tests,
+    get_student_assignments,
+    get_assignment_review,
 )
 from models import (
     AddChildRequest,
     AssignmentCreateRequest,
     AssignmentResponse,
+    AttemptScoreResponse,
     ChatRequest,
     ChildInfo,
     CreateSessionRequest,
@@ -48,6 +54,8 @@ from models import (
     TestSummary,
     AssignmentMCQEvalRequest,
     AssignmentSubjectiveEvalRequest,
+    SelfTestMCQEvalRequest,
+    SelfTestSubjectiveEvalRequest,
 )
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
@@ -163,6 +171,63 @@ async def list_children(user_id: Annotated[str, Depends(get_current_user)]):
     return children
 
 
+@app.get("/api/parent/children/{child_id}/assignments")
+async def list_child_assignments(
+    child_id: str,
+    user_id: Annotated[str, Depends(get_current_user)],
+):
+    """Return all assignments made by this parent to a child (by parent_child.id), with scores."""
+    pool = get_pool()
+    row = await pool.fetchrow(
+        "SELECT child_email FROM parent_child WHERE id = $1 AND parent_id = $2",
+        child_id,
+        user_id,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Child not found.")
+    assignments = await get_child_assignments(pool, user_id, row["child_email"])
+    return assignments
+
+
+@app.get("/api/parent/children/{child_id}/unassigned-tests")
+async def list_unassigned_tests(
+    child_id: str,
+    user_id: Annotated[str, Depends(get_current_user)],
+):
+    """Return tests created by this parent not yet assigned to the specified child."""
+    pool = get_pool()
+    row = await pool.fetchrow(
+        "SELECT child_email FROM parent_child WHERE id = $1 AND parent_id = $2",
+        child_id,
+        user_id,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Child not found.")
+    tests = await get_unassigned_tests(pool, user_id, row["child_email"])
+    return tests
+
+
+@app.get("/api/student/assignments")
+async def list_student_assignments(user_id: Annotated[str, Depends(get_current_user)]):
+    """Return all assignments for the authenticated student."""
+    pool = get_pool()
+    assignments = await get_student_assignments(pool, user_id)
+    return assignments
+
+
+@app.get("/api/assignment/{token}/review")
+async def get_assignment_review_route(
+    token: str,
+    user_id: Annotated[str, Depends(get_current_user)],
+):
+    """Return full assignment with child's answers (parent/assigner only)."""
+    pool = get_pool()
+    data = await get_assignment_review(pool, token, user_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Assignment not found or not authorized.")
+    return data
+
+
 # ---------------------------------------------------------------------------
 # Assignments
 # ---------------------------------------------------------------------------
@@ -174,7 +239,9 @@ async def create_assignment_route(
 ):
     """Assign a test to a child. Returns shareable link with token."""
     pool = get_pool()
-    assignment = await create_assignment(pool, req.test_id, user_id, req.child_email)
+    assignment = await create_assignment(
+        pool, req.test_id, user_id, req.child_email, req.mode, req.time_multiplier
+    )
     token = assignment["token"]
     link = f"{FRONTEND_BASE_URL}/take-test/{token}"
     return AssignmentResponse(
@@ -182,6 +249,8 @@ async def create_assignment_route(
         token=token,
         link=link,
         expires_at=assignment["token_expires_at"],
+        mode=assignment["mode"],
+        time_multiplier=float(assignment["time_multiplier"]),
     )
 
 
@@ -204,7 +273,33 @@ async def get_assignment_route(token: str):
         "assignment_id": assignment["assignment_id"],
         "test": stripped_test,
         "status": assignment["status"],
+        "mode": assignment["mode"],
+        "time_multiplier": assignment["time_multiplier"],
     }
+
+
+@app.get("/api/assignment/{token}/last-attempt", response_model=AttemptScoreResponse)
+async def get_last_attempt_route(token: str):
+    """Return score summary for the most recent attempt on this assignment."""
+    pool = get_pool()
+    assignment = await get_assignment_by_token(pool, token)
+    if assignment is None:
+        raise HTTPException(status_code=404, detail="Assignment not found or expired.")
+    score = await get_last_attempt_score(pool, assignment["assignment_id"], assignment["test_id"])
+    if score is None:
+        raise HTTPException(status_code=404, detail="No previous attempt found.")
+    return AttemptScoreResponse(**score)
+
+
+@app.post("/api/assignment/{token}/complete")
+async def complete_assignment_route(token: str):
+    """Mark an assignment as completed."""
+    pool = get_pool()
+    assignment = await get_assignment_by_token(pool, token)
+    if assignment is None:
+        raise HTTPException(status_code=404, detail="Assignment not found or expired.")
+    await update_assignment_status(pool, assignment["assignment_id"], "completed")
+    return {"status": "completed"}
 
 
 @app.post("/api/assignment/{token}/evaluate/mcq", response_model=MCQFeedback)
@@ -327,6 +422,134 @@ async def evaluate_assignment_subjective(token: str, req: AssignmentSubjectiveEv
         assignment_id=assignment["assignment_id"],
     )
 
+    return feedback
+
+
+# ---------------------------------------------------------------------------
+# Self-test evaluation (creator takes their own test, no ADK session needed)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/tests/{test_id}/evaluate/mcq", response_model=MCQFeedback)
+async def evaluate_self_test_mcq(
+    test_id: str,
+    req: SelfTestMCQEvalRequest,
+    user_id: Annotated[str, Depends(get_current_user)],
+):
+    """Evaluate MCQ for a creator self-testing their own test."""
+    pool = get_pool()
+    test_data = await get_test_by_id(pool, test_id, user_id)
+    if test_data is None:
+        raise HTTPException(status_code=404, detail="Test not found.")
+
+    question = _find_question(test_data, req.question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail=f"Question {req.question_id} not found.")
+    if question.get("type") != "mcq":
+        raise HTTPException(status_code=400, detail="Question is not an MCQ.")
+
+    correct_option = question["correct_option"]
+    is_correct = req.selected_option.upper() == correct_option.upper()
+
+    feedback = MCQFeedback(
+        question_id=req.question_id,
+        correct=is_correct,
+        selected_option=req.selected_option,
+        correct_option=correct_option,
+        explanation=question.get("explanation", ""),
+    )
+
+    await save_answer(
+        pool=pool,
+        session_id=req.session_id,
+        test_id=test_id,
+        question_id=req.question_id,
+        question_type="mcq",
+        selected_option=req.selected_option,
+        feedback_json=feedback.model_dump_json(),
+        taker_id=user_id,
+    )
+    return feedback
+
+
+@app.post("/api/tests/{test_id}/evaluate/subjective", response_model=SubjectiveFeedback)
+async def evaluate_self_test_subjective(
+    test_id: str,
+    req: SelfTestSubjectiveEvalRequest,
+    user_id: Annotated[str, Depends(get_current_user)],
+):
+    """Evaluate subjective answer for a creator self-testing their own test."""
+    pool = get_pool()
+    test_data = await get_test_by_id(pool, test_id, user_id)
+    if test_data is None:
+        raise HTTPException(status_code=404, detail="Test not found.")
+
+    question = _find_question(test_data, req.question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail=f"Question {req.question_id} not found.")
+    if question.get("type") not in ("subjective", "short_answer", "long_answer"):
+        raise HTTPException(status_code=400, detail="Question is not a written answer question.")
+
+    solution_steps = question.get("solution_steps", [])
+    expected_answer = question.get("expected_answer", "")
+    marks = question.get("marks", 4)
+
+    try:
+        image_bytes = base64.b64decode(req.image_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid Base64 image data.")
+
+    client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+    evaluation_prompt = (
+        f"Question: {question['text']}\n\n"
+        f"Total marks: {marks}\n\n"
+        f"Expected solution steps:\n"
+        + "\n".join(f"  {i+1}. {s}" for i, s in enumerate(solution_steps))
+        + f"\n\nExpected final answer: {expected_answer}\n\n"
+        "Evaluate the student's handwritten work shown in the image."
+    )
+
+    try:
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                genai_types.Content(
+                    role="user",
+                    parts=[
+                        genai_types.Part(text=evaluation_prompt),
+                        genai_types.Part(
+                            inline_data=genai_types.Blob(mime_type="image/jpeg", data=image_bytes)
+                        ),
+                    ],
+                )
+            ],
+            config=genai_types.GenerateContentConfig(
+                system_instruction=EVALUATOR_PROMPT,
+                response_mime_type="application/json",
+                temperature=0.2,
+            ),
+        )
+        result = json.loads(response.text.strip())
+        feedback = SubjectiveFeedback(
+            question_id=req.question_id,
+            score=int(result.get("score", 0)),
+            max_score=int(result.get("max_score", marks)),
+            explanation=result.get("explanation", ""),
+            step_feedback=result.get("step_feedback", []),
+            next_step_hint=result.get("next_step_hint", ""),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(exc)}")
+
+    await save_answer(
+        pool=pool,
+        session_id=req.session_id,
+        test_id=test_id,
+        question_id=req.question_id,
+        question_type="subjective",
+        selected_option=None,
+        feedback_json=feedback.model_dump_json(),
+        taker_id=user_id,
+    )
     return feedback
 
 
@@ -593,7 +816,15 @@ async def evaluate_subjective(req: SubjectiveEvalRequest):
 # ---------------------------------------------------------------------------
 
 def _strip_answers(test: dict) -> dict:
-    """Remove answer key fields before sending test to the frontend."""
+    """Remove answer key fields before sending test to the frontend.
+
+    Called in two places:
+    1. SSE stream — when generate_questions fires, before emitting the artifact event.
+    2. GET /api/assignment/{token} — before returning the test to an unauthenticated student.
+
+    The full answer key stays in tests.test_data (PostgreSQL). Evaluation endpoints
+    look it up server-side and never echo it back — only feedback is returned.
+    """
     safe = {k: v for k, v in test.items() if k != "questions"}
     safe["questions"] = []
 

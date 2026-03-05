@@ -4,7 +4,7 @@ import { getTest, createAssignment, getChildren } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { MCQQuestion } from '../components/PracticeTest/MCQQuestion';
 import { SubjectiveQuestion } from '../components/PracticeTest/SubjectiveQuestion';
-import type { PracticeTest, Question } from '../types';
+import type { PracticeTest, Question, TestMode } from '../types';
 
 type Child = {
   id: string;
@@ -30,6 +30,8 @@ export function TestViewerPage() {
   const [assigning, setAssigning] = useState(false);
   const [assignmentLink, setAssignmentLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [assignMode, setAssignMode] = useState<TestMode>('practice');
+  const [timeMultiplier, setTimeMultiplier] = useState<1.0 | 1.5 | 2.0>(1.0);
 
   useEffect(() => {
     if (!testId) return;
@@ -42,6 +44,8 @@ export function TestViewerPage() {
   async function openAssignModal() {
     setShowAssignModal(true);
     setAssignmentLink(null);
+    setAssignMode('practice');
+    setTimeMultiplier(1.0);
     if (profile?.role === 'parent') {
       try {
         const kids = await getChildren();
@@ -59,7 +63,7 @@ export function TestViewerPage() {
 
     setAssigning(true);
     try {
-      const result = await createAssignment(testId, email);
+      const result = await createAssignment(testId, email, assignMode, timeMultiplier);
       setAssignmentLink(result.link);
     } catch {
       // keep modal open
@@ -115,12 +119,20 @@ export function TestViewerPage() {
         </button>
         <span className="text-gray-300">|</span>
         <span className="text-sm font-medium text-gray-700 flex-1 truncate">{test.topic}</span>
-        <button
-          onClick={openAssignModal}
-          className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 transition-colors"
-        >
-          Assign to Child
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate(`/tests/${testId}/take`)}
+            className="rounded-lg border border-brand-600 px-3 py-1.5 text-sm font-semibold text-brand-600 hover:bg-brand-50 transition-colors"
+          >
+            Take This Test
+          </button>
+          <button
+            onClick={openAssignModal}
+            className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 transition-colors"
+          >
+            Assign to Child
+          </button>
+        </div>
       </header>
 
       {/* Test info bar */}
@@ -182,7 +194,7 @@ export function TestViewerPage() {
             {!assignmentLink ? (
               <>
                 <h3 className="font-semibold text-gray-900 mb-4">Assign Test</h3>
-                <form onSubmit={handleAssign} className="space-y-3">
+                <form onSubmit={handleAssign} className="space-y-4">
                   {children.length > 0 && (
                     <div className="space-y-2">
                       <p className="text-xs text-gray-500 font-medium">Select a child</p>
@@ -219,6 +231,59 @@ export function TestViewerPage() {
                     placeholder={children.length > 0 ? 'Or enter email directly' : "Child's email address"}
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400"
                   />
+
+                  {/* Mode toggle */}
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium mb-2">Test mode</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['practice', 'exam'] as TestMode[]).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setAssignMode(m)}
+                          className={`rounded-lg border py-2 text-sm font-medium transition-colors capitalize ${
+                            assignMode === m
+                              ? 'border-brand-500 bg-brand-50 text-brand-700'
+                              : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                          }`}
+                        >
+                          {m === 'practice' ? 'Practice' : 'Exam'}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-xs text-gray-400">
+                      {assignMode === 'practice' ? 'Instant feedback after each question' : 'Timed, feedback shown only after submitting'}
+                    </p>
+                  </div>
+
+                  {/* Time multiplier (exam only) */}
+                  {assignMode === 'exam' && (
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium mb-2">Time accommodation</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([1.0, 1.5, 2.0] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setTimeMultiplier(m)}
+                            className={`rounded-lg border py-2 text-sm font-medium transition-colors ${
+                              timeMultiplier === m
+                                ? 'border-brand-500 bg-brand-50 text-brand-700'
+                                : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                            }`}
+                          >
+                            {m}×
+                          </button>
+                        ))}
+                      </div>
+                      {test.duration_minutes && (
+                        <p className="mt-1 text-xs text-gray-400">
+                          Effective duration: {Math.round(test.duration_minutes * timeMultiplier)} min
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex gap-2 pt-2">
                     <button
                       type="submit"
