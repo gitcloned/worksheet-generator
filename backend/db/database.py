@@ -189,14 +189,15 @@ async def save_answer(
     feedback_json: str,
     assignment_id: str | None = None,
     taker_id: str | None = None,
+    attempt_number: int = 1,
 ) -> None:
     """Persist a submitted answer and its feedback."""
     await pool.execute(
         """
         INSERT INTO test_answers
             (session_id, test_id, assignment_id, taker_id, question_id, question_type,
-             selected_option, feedback_json)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             selected_option, feedback_json, attempt_number)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         """,
         session_id,
         test_id,
@@ -206,6 +207,7 @@ async def save_answer(
         question_type,
         selected_option,
         feedback_json if isinstance(feedback_json, str) else json.dumps(feedback_json),
+        attempt_number,
     )
 
 
@@ -283,7 +285,7 @@ async def get_assignment_by_token(pool: asyncpg.Pool, token: str) -> dict | None
         """
         SELECT a.id::text AS assignment_id, a.test_id, a.status,
                a.token_expires_at, a.assigned_to_email,
-               a.mode, a.time_multiplier,
+               a.mode, a.time_multiplier, a.current_attempt,
                t.test_data
         FROM test_assignments a
         JOIN tests t ON t.id = a.test_id
@@ -306,17 +308,19 @@ async def get_last_attempt_score(
     pool: asyncpg.Pool,
     assignment_id: str,
     test_id: str,
+    attempt_number: int = 1,
 ) -> dict | None:
-    """Compute score for the last attempt on an assignment."""
+    """Compute score for a specific attempt on an assignment."""
     rows = await pool.fetch(
         """
         SELECT question_type, feedback_json, answered_at
         FROM test_answers
-        WHERE assignment_id = $1 AND test_id = $2
+        WHERE assignment_id = $1 AND test_id = $2 AND attempt_number = $3
         ORDER BY answered_at ASC
         """,
         assignment_id,
         test_id,
+        attempt_number,
     )
     if not rows:
         return None
@@ -357,6 +361,25 @@ async def update_assignment_status(pool: asyncpg.Pool, assignment_id: str, statu
     )
 
 
+async def start_new_attempt(pool: asyncpg.Pool, token: str) -> int:
+    """Increment current_attempt and reset status to 'started'. Returns the new attempt number.
+
+    Old answers are kept intact (tagged with their original attempt_number), so history
+    is fully preserved. get_last_attempt_score uses the new attempt_number, which has no
+    answers yet, so score returns None until the student submits answers.
+    """
+    row = await pool.fetchrow(
+        """
+        UPDATE test_assignments
+        SET current_attempt = current_attempt + 1, status = 'started'
+        WHERE token = $1
+        RETURNING current_attempt
+        """,
+        token,
+    )
+    return row["current_attempt"]
+
+
 # ---------------------------------------------------------------------------
 # Parent child-wise views
 # ---------------------------------------------------------------------------
@@ -370,7 +393,7 @@ async def get_child_assignments(
     rows = await pool.fetch(
         """
         SELECT a.id::text AS assignment_id, a.test_id, a.token, a.status,
-               a.mode, a.time_multiplier, a.created_at,
+               a.mode, a.time_multiplier, a.created_at, a.current_attempt,
                t.topic, t.board, t.grade, t.total_marks, t.duration_minutes, t.question_count
         FROM test_assignments a
         JOIN tests t ON t.id = a.test_id
@@ -384,7 +407,7 @@ async def get_child_assignments(
     for r in rows:
         d = dict(r)
         d["time_multiplier"] = float(d["time_multiplier"])
-        score = await get_last_attempt_score(pool, d["assignment_id"], d["test_id"])
+        score = await get_last_attempt_score(pool, d["assignment_id"], d["test_id"], d["current_attempt"])
         d["score"] = score
         result.append(d)
     return result
@@ -426,7 +449,7 @@ async def get_student_assignments(
     rows = await pool.fetch(
         """
         SELECT a.id::text AS assignment_id, a.test_id, a.token, a.status,
-               a.mode, a.time_multiplier, a.created_at, a.assigned_to_email,
+               a.mode, a.time_multiplier, a.created_at, a.current_attempt, a.assigned_to_email,
                t.topic, t.board, t.grade, t.total_marks, t.duration_minutes, t.question_count,
                p.display_name AS assigned_by_name
         FROM test_assignments a
@@ -444,7 +467,7 @@ async def get_student_assignments(
     for r in rows:
         d = dict(r)
         d["time_multiplier"] = float(d["time_multiplier"])
-        score = await get_last_attempt_score(pool, d["assignment_id"], d["test_id"])
+        score = await get_last_attempt_score(pool, d["assignment_id"], d["test_id"], d["current_attempt"])
         d["score"] = score
         result.append(d)
     return result
@@ -460,7 +483,7 @@ async def get_assignment_review(
         """
         SELECT a.id::text AS assignment_id, a.test_id, a.status,
                a.assigned_to_email, a.assigned_by::text,
-               a.mode, a.time_multiplier,
+               a.mode, a.time_multiplier, a.current_attempt,
                t.test_data
         FROM test_assignments a
         JOIN tests t ON t.id = a.test_id
@@ -481,11 +504,12 @@ async def get_assignment_review(
         """
         SELECT question_id, question_type, selected_option, feedback_json, answered_at
         FROM test_answers
-        WHERE assignment_id = $1 AND test_id = $2
+        WHERE assignment_id = $1 AND test_id = $2 AND attempt_number = $3
         ORDER BY answered_at ASC
         """,
         d["assignment_id"],
         d["test_id"],
+        d["current_attempt"],
     )
 
     answers_by_qid: dict[str, Any] = {}
@@ -497,6 +521,7 @@ async def get_assignment_review(
 
     d["test"] = test_data
     d["answers"] = answers_by_qid
+    # current_attempt is already in d; remove internal fields
     del d["test_data"]
     del d["assigned_by"]
     return d

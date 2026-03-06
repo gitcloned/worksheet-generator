@@ -145,6 +145,11 @@ export function AssignmentReviewPage() {
         <span className={`px-2 py-0.5 rounded-full capitalize font-semibold ${data.mode === 'exam' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
           {data.mode}
         </span>
+        {data.current_attempt > 1 && (
+          <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-semibold">
+            Attempt {data.current_attempt}
+          </span>
+        )}
       </div>
 
       <div className="flex-1 pb-24 overflow-hidden">

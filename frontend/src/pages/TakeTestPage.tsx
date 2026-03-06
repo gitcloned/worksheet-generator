@@ -6,6 +6,7 @@ import {
   evaluateMCQForAssignment,
   evaluateSubjectiveForAssignment,
   completeAssignment,
+  retakeAssignment,
 } from '../api/client';
 import type {
   MCQFeedback,
@@ -94,6 +95,27 @@ export function TakeTestPage() {
       }
     })();
   }, [token]);
+
+  // ── Retake ───────────────────────────────────────────────────────────────
+
+  async function handleRetake() {
+    if (!token) return;
+    setPhase('loading');
+    try {
+      await retakeAssignment(token);
+    } catch {
+      setPhase('intro');
+      return;
+    }
+    setLastAttempt(null);
+    setFeedbacks({});
+    setPendingAnswers({});
+    setCurrentIndex(0);
+    setGradedCount(0);
+    setElapsedSeconds(0);
+    setRemainingSeconds(null);
+    setPhase('taking');
+  }
 
   // ── Timer ────────────────────────────────────────────────────────────────
 
@@ -240,6 +262,7 @@ export function TakeTestPage() {
         assignment={assignment}
         lastAttempt={lastAttempt}
         onStart={() => setPhase('taking')}
+        onRetake={assignment.status === 'completed' ? handleRetake : undefined}
       />
     );
   }
@@ -397,10 +420,12 @@ function IntroScreen({
   assignment,
   lastAttempt,
   onStart,
+  onRetake,
 }: {
   assignment: AssignmentWithMode;
   lastAttempt: LastAttempt | null;
   onStart: () => void;
+  onRetake?: () => void;
 }) {
   const { test, mode, time_multiplier } = assignment;
   const effectiveDuration = test.duration_minutes
@@ -475,12 +500,21 @@ function IntroScreen({
           </div>
         )}
 
-        <button
-          onClick={onStart}
-          className="w-full rounded-xl bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 active:scale-[0.98] transition-all"
-        >
-          Start {mode === 'exam' ? 'Exam' : 'Practice'}
-        </button>
+        {onRetake ? (
+          <button
+            onClick={onRetake}
+            className="w-full rounded-xl bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 active:scale-[0.98] transition-all"
+          >
+            Retake {mode === 'exam' ? 'Exam' : 'Practice'}
+          </button>
+        ) : (
+          <button
+            onClick={onStart}
+            className="w-full rounded-xl bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 active:scale-[0.98] transition-all"
+          >
+            Start {mode === 'exam' ? 'Exam' : 'Practice'}
+          </button>
+        )}
       </div>
     </div>
   );

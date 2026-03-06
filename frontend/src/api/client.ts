@@ -231,6 +231,14 @@ export async function completeAssignment(token: string) {
   return res.json();
 }
 
+export async function retakeAssignment(token: string) {
+  const res = await fetch(`${BASE}/assignment/${token}/retake`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error('Failed to reset assignment');
+}
+
 export async function evaluateSubjectiveForAssignment(
   token: string,
   assignmentId: string,

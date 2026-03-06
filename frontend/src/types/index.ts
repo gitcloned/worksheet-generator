@@ -148,6 +148,7 @@ export type AssignmentReview = {
   assigned_to_email: string;
   mode: TestMode;
   time_multiplier: number;
+  current_attempt: number;
   test: PracticeTest;
   answers: Record<string, {
     question_type: string;

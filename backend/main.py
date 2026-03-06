@@ -31,6 +31,7 @@ from db.database import (
     create_assignment,
     get_assignment_by_token,
     update_assignment_status,
+    start_new_attempt,
     get_last_attempt_score,
     get_child_assignments,
     get_unassigned_tests,
@@ -302,6 +303,17 @@ async def complete_assignment_route(token: str):
     return {"status": "completed"}
 
 
+@app.post("/api/assignment/{token}/retake")
+async def retake_assignment_route(token: str):
+    """Start a new attempt: increments current_attempt, resets status. Old answers are preserved."""
+    pool = get_pool()
+    assignment = await get_assignment_by_token(pool, token)
+    if assignment is None:
+        raise HTTPException(status_code=404, detail="Assignment not found or expired.")
+    new_attempt = await start_new_attempt(pool, token)
+    return {"attempt": new_attempt}
+
+
 @app.post("/api/assignment/{token}/evaluate/mcq", response_model=MCQFeedback)
 async def evaluate_assignment_mcq(token: str, req: AssignmentMCQEvalRequest):
     """Evaluate MCQ answer for a link-based (token) test taker."""
@@ -337,6 +349,7 @@ async def evaluate_assignment_mcq(token: str, req: AssignmentMCQEvalRequest):
         selected_option=req.selected_option,
         feedback_json=feedback.model_dump_json(),
         assignment_id=assignment["assignment_id"],
+        attempt_number=assignment["current_attempt"],
     )
 
     return feedback
@@ -420,6 +433,7 @@ async def evaluate_assignment_subjective(token: str, req: AssignmentSubjectiveEv
         selected_option=None,
         feedback_json=feedback.model_dump_json(),
         assignment_id=assignment["assignment_id"],
+        attempt_number=assignment["current_attempt"],
     )
 
     return feedback
