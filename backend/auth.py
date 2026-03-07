@@ -94,6 +94,14 @@ async def _decode_token(token: str) -> dict:
             detail=f"Invalid or expired token: {exc}",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    except Exception as exc:
+        # JWKS fetch failed (network error, timeout, etc.) — treat as auth failure
+        # so one bad request doesn't 500 the whole endpoint.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Could not validate token (JWKS fetch failed): {exc}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 async def get_current_user(
