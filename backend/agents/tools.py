@@ -75,8 +75,31 @@ async def research_book(
     )
     research_data = json.loads(extract_resp.text.strip())
 
+    # Step 3: find sample exercises from the book (best-effort — skip gracefully if not found)
+    sample_prompt = (
+        f"Find actual sample problems, exercises, and worked examples from '{book}' "
+        f"for {grade} students ({board} board), specifically about: {topic}.\n\n"
+        f"List 5–10 representative exercise questions or problem types from this book, "
+        f"showing the exact format, difficulty style, and numbers used. "
+        f"Focus on what makes this book's exercises distinctive. "
+        f"If you cannot find specific exercises from this exact book, say only: "
+        f"'No specific exercises found.'"
+    )
+    sample_resp = await client.aio.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[types.Content(role="user", parts=[types.Part(text=sample_prompt)])],
+        config=types.GenerateContentConfig(
+            tools=[types.Tool(google_search=types.GoogleSearch())],
+            temperature=0.1,
+        ),
+    )
+    sample_text = sample_resp.text.strip()
+    if "no specific exercises found" in sample_text.lower():
+        sample_text = ""
+
     # Store raw research separately — used by generate_questions, not sent to frontend
     research_data["raw_research"] = raw_research
+    research_data["sample_problems"] = sample_text
     research_data["book"] = book
     research_data["board"] = board
     research_data["grade"] = grade
@@ -154,6 +177,7 @@ async def generate_questions(tool_context: ToolContext) -> str:
         raise ValueError("No paper blueprint found in session state. Call design_blueprint first.")
 
     raw_research = book_research.get("raw_research", "No research available.")
+    sample_problems = book_research.get("sample_problems", "")
 
     gen_prompt = (
         f"Generate a practice test for:\n"
@@ -163,6 +187,16 @@ async def generate_questions(tool_context: ToolContext) -> str:
         f"- Book: {book_research.get('book', '')}\n\n"
         f"Syllabus research (use this to ground questions in actual book content):\n"
         f"{raw_research}\n\n"
+    )
+
+    if sample_problems:
+        gen_prompt += (
+            f"Sample exercises from this specific book "
+            f"(match this difficulty level and problem style exactly):\n"
+            f"{sample_problems}\n\n"
+        )
+
+    gen_prompt += (
         f"Paper blueprint to follow EXACTLY:\n"
         f"{json.dumps(blueprint, indent=2)}\n\n"
         f"Generate questions that match the blueprint's sections precisely."

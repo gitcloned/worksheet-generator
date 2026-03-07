@@ -41,11 +41,7 @@ export function Chat({ userId }: Props) {
     isLoading &&
     (!lastMsg ||
       lastMsg.role === 'user' ||
-      (lastMsg.role === 'assistant' &&
-        !lastMsg.content &&
-        !lastMsg.artifact &&
-        !lastMsg.research &&
-        !lastMsg.blueprint));
+      (lastMsg.role === 'assistant' && !lastMsg.content));
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
