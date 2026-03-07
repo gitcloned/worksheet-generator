@@ -22,6 +22,7 @@ import type {
   TestMode,
 } from '../types';
 import { QuestionFeedback } from '../components/PracticeTest/QuestionFeedback';
+import { CameraCapture } from '../components/PracticeTest/CameraCapture';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -744,19 +745,6 @@ function ExamSubjectiveCard({
   onCapture: (base64: string, url: string) => void;
   onClear: () => void;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = ev.target?.result as string;
-      onCapture(result.split(',')[1], result);
-    };
-    reader.readAsDataURL(file);
-  }
-
   const typeLabel = question.type === 'short_answer' ? 'Short Answer' : question.type === 'long_answer' ? 'Long Answer' : 'Written';
 
   return (
@@ -765,33 +753,13 @@ function ExamSubjectiveCard({
         Question {index + 1} · {typeLabel} ({question.marks} marks)
       </p>
       <p className="mb-5 font-medium text-gray-800 text-base leading-relaxed">{question.text}</p>
-      <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
-      {!pending ? (
-        <button
-          onClick={() => fileRef.current?.click()}
-          className="flex items-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-5 py-5 text-sm text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors w-full justify-center active:scale-[0.98]"
-        >
-          <span className="text-xl">📷</span> Take a photo of your working
-        </button>
-      ) : (
-        <div className="space-y-3">
-          <div className="relative">
-            <img src={pending.previewUrl} alt="Your working" className="w-full rounded-lg border border-gray-200 object-contain max-h-64" />
-            <button
-              onClick={onClear}
-              className="absolute top-2 right-2 rounded-full bg-white border border-gray-200 w-7 h-7 flex items-center justify-center text-gray-500 hover:text-red-500 shadow-sm"
-            >
-              ✕
-            </button>
-          </div>
-          <p className="text-xs text-center text-gray-400">Photo saved — will be graded on submit</p>
-          <button
-            onClick={() => { onClear(); if (fileRef.current) fileRef.current.value = ''; }}
-            className="w-full rounded-lg border border-gray-300 py-2 text-sm text-gray-600 hover:bg-gray-50"
-          >
-            Retake photo
-          </button>
-        </div>
+      <CameraCapture
+        previewUrl={pending?.previewUrl ?? null}
+        onCapture={onCapture}
+        onClear={onClear}
+      />
+      {pending && (
+        <p className="mt-2 text-xs text-center text-gray-400">Photo saved — will be graded on submit</p>
       )}
     </div>
   );
@@ -823,19 +791,6 @@ function PracticeSubjectiveCard({
   const [preview, setPreview] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = ev.target?.result as string;
-      setPreview(result);
-      setImageBase64(result.split(',')[1]);
-    };
-    reader.readAsDataURL(file);
-  }
 
   async function handleSubmit() {
     if (!imageBase64 || loading || feedback) return;
@@ -861,44 +816,19 @@ function PracticeSubjectiveCard({
 
       {!feedback && (
         <>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={handleFile}
+          <CameraCapture
+            previewUrl={preview}
+            onCapture={(base64, url) => { setImageBase64(base64); setPreview(url); }}
+            onClear={() => { setPreview(null); setImageBase64(null); }}
           />
-          {!preview ? (
+          {preview && (
             <button
-              onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-5 py-5 text-sm text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors w-full justify-center active:scale-[0.98]"
+              onClick={handleSubmit}
+              disabled={loading}
+              className="mt-3 w-full rounded-xl bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 transition-colors active:scale-[0.98]"
             >
-              <span className="text-xl">📷</span> Take a photo of your working
+              {loading ? 'Grading your work…' : 'Submit for Grading'}
             </button>
-          ) : (
-            <div className="space-y-3">
-              <div className="relative">
-                <img src={preview} alt="Your working" className="w-full rounded-lg border border-gray-200 object-contain max-h-64" />
-                <button
-                  onClick={() => {
-                    setPreview(null);
-                    setImageBase64(null);
-                    if (fileRef.current) fileRef.current.value = '';
-                  }}
-                  className="absolute top-2 right-2 rounded-full bg-white border border-gray-200 w-7 h-7 flex items-center justify-center text-gray-500 hover:text-red-500 shadow-sm"
-                >
-                  ✕
-                </button>
-              </div>
-              <button
-                onClick={handleSubmit}
-                disabled={loading}
-                className="w-full rounded-xl bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 transition-colors active:scale-[0.98]"
-              >
-                {loading ? 'Grading your work…' : 'Submit for Grading'}
-              </button>
-            </div>
           )}
         </>
       )}
