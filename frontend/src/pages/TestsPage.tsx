@@ -234,6 +234,27 @@ export function TestsPage() {
                       ),
                     },
                     {
+                      header: 'Assigned',
+                      render: (t) => (
+                        <div className="flex flex-col gap-0.5">
+                          {t.assigned_count > 0 ? (
+                            <>
+                              <span className="text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full w-fit">
+                                {t.assigned_count} assigned
+                              </span>
+                              {t.completed_count > 0 && (
+                                <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full w-fit">
+                                  {t.completed_count} done
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </div>
+                      ),
+                    },
+                    {
                       header: 'Created',
                       render: (t) => (
                         <span className="text-sm text-gray-400">{relativeDate(t.created_at)}</span>

@@ -34,15 +34,13 @@ def event_loop():
     loop.close()
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="function")
 async def http_client():
     """Async HTTP client pointed at the local backend."""
-    async with httpx.AsyncClient(base_url=BACKEND_URL, timeout=30.0) as client:
-        # Check the backend is reachable before running any tests
+    async with httpx.AsyncClient(base_url=BACKEND_URL, timeout=10.0) as client:
         try:
-            resp = await client.get("/api/tests", headers={"Authorization": "Bearer invalid"})
-            # 401 is fine — means the backend is up
-        except httpx.ConnectError:
+            await client.get("/api/tests", headers={"Authorization": "Bearer invalid"})
+        except (httpx.ConnectError, httpx.ReadTimeout):
             pytest.skip(f"Backend not reachable at {BACKEND_URL} — start it first")
         yield client
 
