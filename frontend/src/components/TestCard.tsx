@@ -10,6 +10,8 @@ export type TestSummary = {
   total_marks: number | null;
   duration_minutes: number | null;
   created_at: string;
+  assigned_count: number;
+  completed_count: number;
 };
 
 export function TestCard({ test }: { test: TestSummary }) {

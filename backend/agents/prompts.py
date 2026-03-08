@@ -154,7 +154,6 @@ Generate questions that:
 
 Output ONLY this JSON:
 {
-  "test_id": "<uuid4>",
   "topic": "<topic>",
   "board": "<board>",
   "grade": "<grade>",

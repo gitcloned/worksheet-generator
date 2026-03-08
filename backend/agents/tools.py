@@ -179,9 +179,12 @@ async def generate_questions(tool_context: ToolContext) -> str:
     raw_research = book_research.get("raw_research", "No research available.")
     sample_problems = book_research.get("sample_problems", "")
 
+    selected_topics = blueprint.get("selected_topics", [])
+    topic_label = ", ".join(selected_topics) if selected_topics else book_research.get("book", "")
+
     gen_prompt = (
         f"Generate a practice test for:\n"
-        f"- Topic: {book_research.get('grade', '')} {book_research.get('book', '')}\n"
+        f"- Topic: {topic_label}\n"
         f"- Board: {book_research.get('board', '')}\n"
         f"- Grade: {book_research.get('grade', '')}\n"
         f"- Book: {book_research.get('book', '')}\n\n"
@@ -214,14 +217,19 @@ async def generate_questions(tool_context: ToolContext) -> str:
 
     test_data = json.loads(response.text.strip())
 
-    if "test_id" not in test_data:
-        test_data["test_id"] = str(uuid.uuid4())
+    # Always assign a real server-side UUID — never use what the AI returns.
+    # The AI consistently returns placeholder UUIDs (e.g. "a1b2c3d4-...") which
+    # cause ON CONFLICT DO NOTHING to silently drop subsequent tests.
+    test_data["test_id"] = str(uuid.uuid4())
 
     # Fill duration/marks from blueprint if generator didn't include them
     if "duration_minutes" not in test_data:
         test_data["duration_minutes"] = blueprint.get("duration_minutes")
     if "total_marks" not in test_data:
         test_data["total_marks"] = blueprint.get("total_marks")
+
+    # Use selected topics as the test topic label (not the grade+book combo)
+    test_data["topic"] = topic_label
 
     tool_context.state["current_test"] = test_data
     return json.dumps(test_data)

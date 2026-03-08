@@ -1,8 +1,11 @@
 import base64
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Annotated
+
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
@@ -646,15 +649,9 @@ async def chat(
                                 full_test = json.loads(result_str)
                             except (json.JSONDecodeError, ValueError):
                                 continue
-                            frontend_test = _strip_answers(full_test)
-                            yield f"data: {json.dumps({'type': 'artifact', 'test': frontend_test})}\n\n"
-                            try:
-                                session = await svc.get_session(app_name=APP_NAME, user_id=req.user_id, session_id=req.session_id)
-                                if session:
-                                    await svc.persist_state(app_name=APP_NAME, user_id=req.user_id, session_id=req.session_id, state=dict(session.state))
-                            except Exception:
-                                pass
-                            # Save test to DB (with answer keys, for library + assignments)
+
+                            # Save to DB BEFORE yielding to the client — this avoids the race
+                            # condition where a client disconnect cancels the awaited save.
                             if current_user_id:
                                 try:
                                     await save_test(
@@ -665,7 +662,26 @@ async def chat(
                                         test_data=full_test,
                                     )
                                 except Exception:
-                                    pass  # don't fail the stream if DB save fails
+                                    logger.error(
+                                        "Failed to save test %s for user %s",
+                                        full_test.get("test_id"),
+                                        current_user_id,
+                                        exc_info=True,
+                                    )
+                            else:
+                                logger.warning(
+                                    "generate_questions fired but current_user_id is None "
+                                    "(token missing or expired) — test will NOT be saved to library"
+                                )
+
+                            frontend_test = _strip_answers(full_test)
+                            yield f"data: {json.dumps({'type': 'artifact', 'test': frontend_test})}\n\n"
+                            try:
+                                session = await svc.get_session(app_name=APP_NAME, user_id=req.user_id, session_id=req.session_id)
+                                if session:
+                                    await svc.persist_state(app_name=APP_NAME, user_id=req.user_id, session_id=req.session_id, state=dict(session.state))
+                            except Exception:
+                                pass
 
                     # ── Stream text from the orchestrator ──
                     elif hasattr(part, "text") and part.text and event.author != "user":

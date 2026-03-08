@@ -138,14 +138,18 @@ async def save_test(
 
 
 async def get_tests_for_user(pool: asyncpg.Pool, user_id: str) -> list[dict]:
-    """Return test summaries for a user (no answer keys)."""
+    """Return test summaries for a user, including assignment stats."""
     rows = await pool.fetch(
         """
-        SELECT id, topic, board, grade, book, total_marks, duration_minutes,
-               question_count, created_at
-        FROM tests
-        WHERE creator_id = $1
-        ORDER BY created_at DESC
+        SELECT t.id, t.topic, t.board, t.grade, t.book, t.total_marks,
+               t.duration_minutes, t.question_count, t.created_at,
+               COUNT(ta.id)                                        AS assigned_count,
+               COUNT(ta.id) FILTER (WHERE ta.status = 'completed') AS completed_count
+        FROM tests t
+        LEFT JOIN test_assignments ta ON ta.test_id = t.id
+        WHERE t.creator_id = $1
+        GROUP BY t.id
+        ORDER BY t.created_at DESC
         """,
         user_id,
     )

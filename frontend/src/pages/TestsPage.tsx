@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getTests, getChildren, addChild, getStudentAssignments } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { TestCard } from '../components/TestCard';
 import { DataGrid } from '../components/DataGrid';
 import type { TestSummary } from '../components/TestCard';
 import type { StudentAssignment } from '../types';
@@ -26,6 +25,15 @@ export function TestsPage() {
   const [showAddChild, setShowAddChild] = useState(false);
   const [childEmail, setChildEmail] = useState('');
   const [addingChild, setAddingChild] = useState(false);
+  const [testSearch, setTestSearch] = useState('');
+
+  const filteredTests = useMemo(() => {
+    const q = testSearch.trim().toLowerCase();
+    if (!q) return tests;
+    return tests.filter((t) =>
+      [t.topic, t.board, t.grade, t.book].some((v) => v?.toLowerCase().includes(q))
+    );
+  }, [tests, testSearch]);
 
   const isParent = profile?.role === 'parent';
   const isStudent = profile?.role === 'student';
@@ -164,11 +172,20 @@ export function TestsPage() {
           <>
             {/* Tests section (parent / no-role) */}
             <section>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-gray-900">My Tests</h2>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-1 relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+                  <input
+                    type="text"
+                    value={testSearch}
+                    onChange={(e) => setTestSearch(e.target.value)}
+                    placeholder="Search by topic, board, grade, or book…"
+                    className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-400"
+                  />
+                </div>
                 <button
                   onClick={() => navigate('/tests/new')}
-                  className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 transition-colors shadow-sm"
+                  className="flex-shrink-0 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 transition-colors shadow-sm"
                 >
                   + Create New Test
                 </button>
@@ -181,11 +198,81 @@ export function TestsPage() {
                   <p className="text-sm text-gray-500 mt-1">Create your first test to get started!</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {tests.map((test) => (
-                    <TestCard key={test.id} test={test} />
-                  ))}
-                </div>
+                <DataGrid<TestSummary>
+                  data={filteredTests}
+                  emptyMessage={testSearch ? `No tests match "${testSearch}"` : 'No tests yet.'}
+                  columns={[
+                    {
+                      header: 'Topic',
+                      render: (t) => (
+                        <div>
+                          <p className="font-medium text-gray-800 line-clamp-1">{t.topic ?? 'Untitled'}</p>
+                          {t.book && <p className="text-xs text-gray-400 line-clamp-1">{t.book}</p>}
+                        </div>
+                      ),
+                    },
+                    {
+                      header: 'Board / Grade',
+                      render: (t) => (
+                        <div className="flex flex-wrap gap-1">
+                          {t.board && (
+                            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{t.board}</span>
+                          )}
+                          {t.grade && (
+                            <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs text-purple-700">Gr {t.grade}</span>
+                          )}
+                        </div>
+                      ),
+                    },
+                    {
+                      header: 'Questions',
+                      render: (t) => (
+                        <span className="text-sm text-gray-600">
+                          {t.question_count != null ? `${t.question_count}Q` : '—'}
+                          {t.duration_minutes != null ? ` · ${t.duration_minutes}m` : ''}
+                        </span>
+                      ),
+                    },
+                    {
+                      header: 'Assigned',
+                      render: (t) => (
+                        <div className="flex flex-col gap-0.5">
+                          {t.assigned_count > 0 ? (
+                            <>
+                              <span className="text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full w-fit">
+                                {t.assigned_count} assigned
+                              </span>
+                              {t.completed_count > 0 && (
+                                <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full w-fit">
+                                  {t.completed_count} done
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </div>
+                      ),
+                    },
+                    {
+                      header: 'Created',
+                      render: (t) => (
+                        <span className="text-sm text-gray-400">{relativeDate(t.created_at)}</span>
+                      ),
+                    },
+                    {
+                      header: '',
+                      render: (t) => (
+                        <button
+                          onClick={() => navigate(`/tests/${t.id}`)}
+                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 transition-colors"
+                        >
+                          View →
+                        </button>
+                      ),
+                    },
+                  ]}
+                />
               )}
             </section>
 
@@ -268,4 +355,15 @@ export function TestsPage() {
       </main>
     </div>
   );
+}
+
+function relativeDate(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return mins <= 1 ? 'just now' : `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
